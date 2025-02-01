@@ -3,7 +3,7 @@ use std::env::split_paths;
 use std::fs::metadata;
 use std::io::{self, Write};
 use std::path::Path;
-use std::{env, os::unix::process, process::exit};
+use std::{env, os::unix::process, process::exit, process::Command};
 
 fn main() {
     loop {
@@ -52,6 +52,26 @@ fn main() {
                 }
             }
             _ => {
+                let path_var = env::var("PATH").unwrap_or_default();
+                let directories = env::split_paths(&path_var);
+                let mut found = false;
+                for dir in directories {
+                    let new_path = dir.join(command);
+                    if new_path.exists() && metadata(&new_path).unwrap().is_file() {
+                        found = true;
+                        let mut cmd = Command::new(new_path);
+                        cmd.args(args);
+                        match cmd.spawn() {
+                            Ok(mut child) => {
+                                child.wait().unwrap();
+                            }
+                            Err(e) => {
+                                println!("Failed to execute {}: {}", command, e);
+                            }
+                        }
+                        break;
+                    }
+                }
                 if input.trim().is_empty() {
                     println!();
                 } else {
