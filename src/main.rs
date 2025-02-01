@@ -61,6 +61,7 @@ fn main() {
                         found = true;
                         let mut cmd = Command::new(new_path);
                         cmd.args(args);
+                        cmd.current_dir(dir); // Set the directory where the command is located
                         match cmd.spawn() {
                             Ok(mut child) => {
                                 child.wait().unwrap();
