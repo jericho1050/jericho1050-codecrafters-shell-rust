@@ -72,10 +72,12 @@ fn main() {
                         break;
                     }
                 }
-                if input.trim().is_empty() {
-                    println!();
-                } else {
-                    println!("{}: command not found", input.trim());
+                if !found {
+                    if input.trim().is_empty() {
+                        println!();
+                    } else {
+                        println!("{}: command not found", input.trim());
+                    }
                 }
             }
         }
