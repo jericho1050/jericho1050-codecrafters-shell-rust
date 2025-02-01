@@ -59,9 +59,8 @@ fn main() {
                     let new_path = dir.join(command);
                     if new_path.exists() && metadata(&new_path).unwrap().is_file() {
                         found = true;
-                        let mut cmd = Command::new(new_path);
+                        let mut cmd = Command::new(command);
                         cmd.args(args);
-                        cmd.current_dir(dir); // Set the directory where the command is located
                         match cmd.spawn() {
                             Ok(mut child) => {
                                 child.wait().unwrap();
