@@ -25,26 +25,28 @@ fn main() {
             "type" => {
                 if !args.is_empty() {
                     let sub_command = args[0].trim();
-                    let directories = split_paths(&path);
-                    let mut found = false;
-                    for dir in directories {
-                        let new_path = dir.join(sub_command);
-                        let metadata = match metadata(&new_path) {
-                            Ok(m) => m,
-                            Err(_) => continue,
-                        };
-                        if new_path.exists() && metadata.is_file() {
-                            println!("{} is {}", sub_command, new_path.display());
-                            found = true;
-                            break;
+                    match sub_command {
+                        "exit" | "echo" | "type" => {
+                            println!("{} is a shell builtin", sub_command)
                         }
-                    }
-                    if !found {
-                        match sub_command {
-                            "exit" | "echo" | "type" => {
-                                println!("{} is a shell builtin", sub_command)
+                        _ => {
+                            let directories = split_paths(&path);
+                            let mut found = false;
+                            for dir in directories {
+                                let new_path = dir.join(sub_command);
+                                let metadata = match metadata(&new_path) {
+                                    Ok(m) => m,
+                                    Err(_) => continue,
+                                };
+                                if new_path.exists() && metadata.is_file() {
+                                    println!("{} is {}", sub_command, new_path.display());
+                                    found = true;
+                                    break;
+                                }
                             }
-                            _ => println!("{}: not found", sub_command),
+                            if !found {
+                                println!("{}: not found", sub_command)
+                            }
                         }
                     }
                 }
