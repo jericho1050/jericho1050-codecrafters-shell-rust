@@ -15,7 +15,7 @@ fn main() {
         let parts: Vec<&str> = input.as_str().split(" ").collect();
         let (command, args) = (parts[0], &parts[1..]);
 
-        match command {
+        match input.trim() {
             "exit 0" => exit(0),
             command => {
                 if command.starts_with("echo") {
