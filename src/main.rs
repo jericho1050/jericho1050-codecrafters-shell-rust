@@ -26,7 +26,7 @@ fn main() {
                 if !args.is_empty() {
                     let sub_command = args[0].trim();
                     match sub_command {
-                        "exit" | "echo" | "type" => {
+                        "exit" | "echo" | "type" | "pwd" => {
                             println!("{} is a shell builtin", sub_command)
                         }
                         _ => {
@@ -50,6 +50,11 @@ fn main() {
                         }
                     }
                 }
+            }
+            "pwd" => {
+                let path = env::current_dir().unwrap();
+                let pwd = String::from(path.to_string_lossy());
+                println!("{}", pwd);
             }
             _ => {
                 let path_var = env::var("PATH").unwrap_or_default();
