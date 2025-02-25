@@ -117,9 +117,6 @@ fn main() {
                 run_external_command(&parts[0], &parts[1..]);
             }
         }
-
-        let (command, args) = (parts[0], &parts[1..]);
-        let path = env::var("PATH").unwrap_or_default();
     }
 }
 
