@@ -56,7 +56,8 @@ fn main() {
         }
 
         // Try to parse the parts with clap; if parsing fails, treat as unknown
-        let parse_result = ShellArgs::try_parse_from(std::iter::once("myshell").chain(parts.iter().map(|s| *s)));
+        let parse_result =
+            ShellArgs::try_parse_from(std::iter::once("myshell").chain(parts.iter().map(|s| *s)));
         let parsed_args = match parse_result {
             Ok(args) => args,
             Err(_) => {
@@ -104,8 +105,13 @@ fn main() {
             },
             Some(ShellCommand::Cd { dir }) => {
                 if let Some(target) = dir {
-                    if let Err(e) = env::set_current_dir(&target) {
-                        println!("cd: {}: No such file or directory",target);
+                    if target == "~" {
+                        let home_dir = env::var("HOME").unwrap_or_default();
+                        if let Err(e) = env::set_current_dir(&home_dir) {
+                            println!("cd: {}: No such file or directory", home_dir);
+                        }
+                    } else if let Err(e) = env::set_current_dir(&target) {
+                        println!("cd: {}: No such file or directory", target);
                     }
                 } else {
                     // Dfault to home directory or do nothing
