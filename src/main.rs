@@ -49,8 +49,8 @@ enum ShellCommand {
     },
 }
 fn main() {
-    let re = Regex::new(r"'([^']*)'").unwrap();
-
+    let re_single = Regex::new(r"'([^']*)'").unwrap();
+    let re_double = Regex::new(r#""([^"]*)""#).unwrap();
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -62,8 +62,17 @@ fn main() {
         // process the entire input
         let mut matches: Vec<(usize, usize, &str)> = Vec::new();
 
-        // find all matches and record their positions
-        for cap in re.captures_iter(&input) {
+        // Process single quotes
+        for cap in re_single.captures_iter(&input) {
+            matches.push((
+                cap.get(0).unwrap().start(),
+                cap.get(0).unwrap().end(),
+                cap.get(1).unwrap().as_str(),
+            ));
+        }
+
+        // Process double quotes
+        for cap in re_double.captures_iter(&input) {
             matches.push((
                 cap.get(0).unwrap().start(),
                 cap.get(0).unwrap().end(),
