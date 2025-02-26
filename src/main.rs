@@ -100,37 +100,43 @@ fn main() {
         // Now actually replace the placeholders with the quoted content
         for i in 0..processed_parts.len() {
             let mut part = processed_parts[i].clone();
-            
+
             // Check if this part contains multiple placeholders
             if part.contains("QUOTED_") {
                 let mut replaced_content = String::new();
                 let mut remaining = part.as_str();
-                
+
                 // Process each placeholder in the token
                 while let Some(start_idx) = remaining.find("QUOTED_") {
                     // Add any text before the placeholder
                     replaced_content.push_str(&remaining[0..start_idx]);
-                    
+
                     // Find the end of the placeholder number
                     let mut end_idx = start_idx + 7; // "QUOTED_" is 7 chars
-                    while end_idx < remaining.len() && remaining[end_idx..end_idx+1].chars().next().unwrap().is_digit(10) {
+                    while end_idx < remaining.len()
+                        && remaining[end_idx..end_idx + 1]
+                            .chars()
+                            .next()
+                            .unwrap()
+                            .is_digit(10)
+                    {
                         end_idx += 1;
                     }
-                    
+
                     // Extract the placeholder
                     let placeholder = &remaining[start_idx..end_idx];
-                    
+
                     // Add the content for this placeholder
                     if let Some(content) = content_map.get(placeholder) {
                         replaced_content.push_str(content);
                     } else {
                         replaced_content.push_str(placeholder);
                     }
-                    
+
                     // Move past this placeholder
                     remaining = &remaining[end_idx..];
                 }
-                
+
                 // Add any remaining text
                 replaced_content.push_str(remaining);
                 processed_parts[i] = replaced_content;
@@ -145,7 +151,9 @@ fn main() {
         }
 
         // Try to parse the parts with clap; if parsing fails, treat as unknown
-        let parse_result = ShellArgs::try_parse_from(&processed_parts);
+        let mut clap_args = vec!["your_shell".to_string()]; // Add program name first
+        clap_args.extend(processed_parts.iter().cloned());
+        let parse_result = ShellArgs::try_parse_from(&clap_args);
         let parsed_args = match parse_result {
             Ok(args) => args,
             Err(_) => {
