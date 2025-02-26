@@ -222,7 +222,12 @@ fn main() {
                         .expect("Should have been able to read the file");
                     contents.push(content);
                 }
-                println!("{}", contents.concat())
+
+                // Print contents without an additional newline
+                print!("{}", contents.concat());
+
+                // Make sure the output is flushed
+                io::stdout().flush().unwrap();
             }
             None => {
                 // If the user typed something that doesn't match a subcommand
