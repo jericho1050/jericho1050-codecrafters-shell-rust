@@ -6,10 +6,11 @@ use std::env::split_paths;
 use std::fs;
 use std::fs::metadata;
 use std::fs::File;
+use std::io::Stdout;
 use std::io::{self, Write};
+use std::os::unix::process::CommandExt; // Import the Unix-specific CommandExt trait
 use std::process;
 use std::process::Command;
-use std::os::unix::process::CommandExt;  // Import the Unix-specific CommandExt trait
 use std::vec;
 use std::{env, process::exit, process::Stdio};
 
@@ -79,7 +80,9 @@ fn main() {
         }
 
         // Check if the command includes redirection operators
-        let has_redirection = parts.iter().any(|part| *part == ">" || *part == "1>");
+        let has_redirection = parts
+            .iter()
+            .any(|part| *part == ">" || *part == "1>" || *part == "2>");
 
         // If there's redirection, skip built-in command handling for echo
         if has_redirection {
@@ -186,6 +189,7 @@ fn main() {
 fn run_external_command(command: &str, args: &[&str]) {
     //  Check for redirection
     let mut redirect_file: Option<&str> = None;
+    let mut redirect_stderr_file: Option<&str> = None;
     let mut filtered_args: Vec<&str> = Vec::new();
 
     // Find redirection operator
@@ -194,6 +198,9 @@ fn run_external_command(command: &str, args: &[&str]) {
         if (args[i] == ">" || args[i] == "1>") && i + 1 < args.len() {
             redirect_file = Some(args[i + 1]);
             i += 2; // Skip the '>' and the filename
+        } else if args[i] == "2>" && i + 1 < args.len() {
+            redirect_stderr_file = Some(args[i + 1]);
+            i += 2; // Skip the '2>' and the filename
         } else {
             filtered_args.push(args[i]);
             i += 1;
@@ -203,32 +210,48 @@ fn run_external_command(command: &str, args: &[&str]) {
     let path_var = env::var("PATH").unwrap_or_default();
     let directories = env::split_paths(&path_var);
 
-    // constructing the Command:
-    if let Some(filename) = redirect_file {
-        // Set up redirection
-        // You'll need to open the file and set it as stdout for the command
-        // Look at std::fs::File::create and Command::stdout
+    // Set up stdout redirection if needed
+    let stdout_redirection = if let Some(filename) = redirect_file {
         match File::create(filename) {
-            Ok(f) => {
-                let output = Stdio::from(f);
-
-                let mut cmd = Command::new(command); // Use the full path to execute
-                cmd.args(filtered_args);
-                cmd.stdout(output);
-                match cmd.spawn() {
-                    Ok(mut child) => {
-                        child.wait().unwrap();
-                    }
-                    Err(e) => {
-                        println!("Failed to execute {}: {}", command, e);
-                    }
-                }
-                return;
-            }
+            Ok(f) => Some(Stdio::from(f)),
             Err(e) => {
                 println!("Failed to create output file: {}", e);
                 return;
             }
+        }
+    } else {
+        None
+    };
+
+    // Set up stderr redirection if needed
+    let stderr_redirection = if let Some(filename) = redirect_stderr_file {
+        match File::create(filename) {
+            Ok(f) => Some(Stdio::from(f)),
+            Err(e) => {
+                println!("Failed to create output file: {}", e);
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
+    let mut cmd = Command::new(command);
+    cmd.args(&filtered_args);
+
+    if let Some(stdout) = stdout_redirection {
+        cmd.stdout(stdout);
+    }
+    if let Some(stderr) = stderr_redirection {
+        cmd.stderr(stderr);
+    }
+
+    match cmd.spawn() {
+        Ok(mut child) => {
+            child.wait().unwrap();
+            return;
+        }
+        Err(_) => {
         }
     }
 
