@@ -51,6 +51,12 @@ enum ShellCommand {
         files: Vec<String>,
     },
 }
+
+enum RedirectionMode {
+    Overwrite,
+    Append,
+}
+
 fn main() {
     loop {
         print!("$ ");
@@ -80,9 +86,9 @@ fn main() {
         }
 
         // Check if the command includes redirection operators
-        let has_redirection = parts
-            .iter()
-            .any(|part| *part == ">" || *part == "1>" || *part == "2>");
+        let has_redirection = parts.iter().any(|part| {
+            *part == ">" || *part == ">>" || *part == "1>" || *part == "1>>" || *part == "2>"
+        });
 
         // If there's redirection, skip built-in command handling for echo
         if has_redirection {
@@ -191,13 +197,19 @@ fn run_external_command(command: &str, args: &[&str]) {
     let mut redirect_file: Option<&str> = None;
     let mut redirect_stderr_file: Option<&str> = None;
     let mut filtered_args: Vec<&str> = Vec::new();
+    let mut redirect_mode = RedirectionMode::Overwrite;
 
     // Find redirection operator
     let mut i = 0;
     while i < args.len() {
-        if (args[i] == ">" || args[i] == "1>") && i + 1 < args.len() {
+        if (args[i] == "1>" || args[i] == ">") && i + 1 < args.len() {
             redirect_file = Some(args[i + 1]);
+            redirect_mode = RedirectionMode::Overwrite;
             i += 2; // Skip the '>' and the filename
+        } else if (args[i] == "1>>" || args[i] == ">>") && i + 1 < args.len() {
+            redirect_file = Some(args[i + 1]);
+            redirect_mode = RedirectionMode::Append;
+            i += 2; // Skip the '>>' and the filename
         } else if args[i] == "2>" && i + 1 < args.len() {
             redirect_stderr_file = Some(args[i + 1]);
             i += 2; // Skip the '2>' and the filename
@@ -212,7 +224,10 @@ fn run_external_command(command: &str, args: &[&str]) {
 
     // Set up stdout redirection if needed
     let stdout_redirection = if let Some(filename) = redirect_file {
-        match File::create(filename) {
+        match match redirect_mode {
+            RedirectionMode::Overwrite => File::create(filename),
+            RedirectionMode::Append => File::options().append(true).create(true).open(filename),
+        } {
             Ok(f) => Some(Stdio::from(f)),
             Err(e) => {
                 println!("Failed to create output file: {}", e);
@@ -251,8 +266,7 @@ fn run_external_command(command: &str, args: &[&str]) {
             child.wait().unwrap();
             return;
         }
-        Err(_) => {
-        }
+        Err(_) => {}
     }
 
     // First try direct execution (if command has path separators)
