@@ -1,4 +1,3 @@
-use clap::Command as ClapCommand;
 #[allow(unused_imports)]
 use clap::{Parser, Subcommand};
 use shell_words;
@@ -6,10 +5,8 @@ use std::env::split_paths;
 use std::fs;
 use std::fs::metadata;
 use std::fs::File;
-use std::io::Stdout;
 use std::io::{self, Write};
 use std::os::unix::process::CommandExt; // Import the Unix-specific CommandExt trait
-use std::process;
 use std::process::Command;
 use std::vec;
 use std::{env, process::exit, process::Stdio};
@@ -57,257 +54,392 @@ enum RedirectionMode {
     Append,
 }
 
+struct Redirection {
+    file: String,
+    mode: RedirectionMode,
+}
+
 fn main() {
     loop {
-        print!("$ ");
-        io::stdout().flush().unwrap();
-
-        // Wait for user input
-        let stdin = io::stdin();
-        let mut input = String::new();
-        stdin.read_line(&mut input).unwrap();
-        let input = input.trim();
-
-        if input.is_empty() {
-            continue;
+        // Display prompt and get user input
+        if let Err(_) = handle_command_input() {
+            // Handle any errors from command execution
+            // For now we just continue the loop
         }
+    }
+}
 
-        // Use shell-words to parse the input following shell quoting rules
-        let parts = match shell_words::split(input) {
-            Ok(parts) => parts,
-            Err(_) => {
-                println!("Error: Invalid quoting in command");
-                continue;
-            }
-        };
+// Process a single command input
+/// Process a single command input
+fn handle_command_input() -> Result<(), ()> {
+    print!("$ ");
+    io::stdout().flush().unwrap();
 
-        if parts.is_empty() {
-            continue;
+    // Wait for user input
+    let input = match read_input() {
+        Some(input) => input,
+        None => return Ok(()),
+    };
+
+    // Parse input into command parts
+    let parts = match shell_words::split(&input) {
+        Ok(parts) => parts,
+        Err(_) => {
+            println!("Error: Invalid quoting in command");
+            return Ok(());
         }
+    };
 
-        // Check if the command includes redirection operators
-        let has_redirection = parts.iter().any(|part| {
-            *part == ">" || *part == ">>" || *part == "1>" || *part == "1>>" || *part == "2>"
-        });
+    if parts.is_empty() {
+        return Ok(());
+    }
 
-        // If there's redirection, skip built-in command handling for echo
-        if has_redirection {
-            run_external_command(
-                &parts[0],
-                &parts[1..].iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
-            );
-            continue;
+    // Check if the command includes redirection operators
+    let has_redirection = parts.iter().any(|part| {
+        *part == ">"
+            || *part == ">>"
+            || *part == "1>"
+            || *part == "1>>"
+            || *part == "2>"
+            || *part == "2>>"
+    });
+
+    // If there's redirection, skip built-in command handling
+    if has_redirection {
+        let args: Vec<&str> = parts[1..].iter().map(|s| s.as_str()).collect();
+        run_external_command(&parts[0], &args);
+        return Ok(());
+    }
+
+    // Try to parse as built-in command with clap
+    handle_command_with_clap(&parts)
+}
+
+/// Read user input from stdin
+fn read_input() -> Option<String> {
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input).is_err() {
+        return None;
+    }
+
+    let input = input.trim();
+    if input.is_empty() {
+        return None;
+    }
+
+    Some(input.to_string())
+}
+
+/// Parse and execute a command using clap
+fn handle_command_with_clap(parts: &[String]) -> Result<(), ()> {
+    let mut clap_args = vec!["your_shell".to_string()];
+    clap_args.extend(parts.iter().cloned());
+
+    match ShellArgs::try_parse_from(&clap_args) {
+        Ok(parsed_args) => execute_builtin_command(parsed_args, parts),
+        Err(_) => {
+            // Not a built-in command, try to execute it
+            let args: Vec<&str> = parts[1..].iter().map(|s| s.as_str()).collect();
+            run_external_command(&parts[0], &args);
+            Ok(())
         }
-        // Try to parse as built-in command with clap
-        let mut clap_args = vec!["your_shell".to_string()];
-        clap_args.extend(parts.iter().cloned());
+    }
+}
 
-        let parse_result = ShellArgs::try_parse_from(&clap_args);
-        match parse_result {
-            Ok(parsed_args) => {
-                // Process built-in commands
-                match parsed_args.command {
-                    Some(ShellCommand::Echo { text }) => {
-                        // Just print the text arguments directly
-                        println!("{}", text.join(" "));
+/// Execute a built-in shell command
+fn execute_builtin_command(parsed_args: ShellArgs, parts: &[String]) -> Result<(), ()> {
+    match parsed_args.command {
+        Some(ShellCommand::Echo { text }) => {
+            println!("{}", text.join(" "));
+        }
+        Some(ShellCommand::Pwd) => {
+            let path = env::current_dir().unwrap();
+            println!("{}", path.to_string_lossy());
+        }
+        Some(ShellCommand::Exit { code }) => exit(code.unwrap_or(0)),
+        Some(ShellCommand::Type { name }) => {
+            handle_type_command(&name);
+        }
+        Some(ShellCommand::Cd { dir }) => {
+            handle_cd_command(dir);
+        }
+        Some(ShellCommand::Cat { files }) => {
+            for path in &files {
+                match fs::read_to_string(&path) {
+                    Ok(content) => {
+                        print!("{}", content);
                     }
-                    Some(ShellCommand::Pwd) => {
-                        let path = env::current_dir().unwrap();
-                        let pwd = String::from(path.to_string_lossy());
-                        println!("{}", pwd);
-                    }
-                    Some(ShellCommand::Exit { code }) => exit(code.unwrap_or(0)),
-                    Some(ShellCommand::Type { name }) => match name.as_str() {
-                        "exit" | "echo" | "type" | "pwd" | "cd" => {
-                            println!("{} is a shell builtin", name)
-                        }
-                        _ => {
-                            let sub_command = &name;
-                            let path = env::var("PATH").unwrap_or_default();
-                            let directories = split_paths(&path);
-                            let mut found = false;
-                            for dir in directories {
-                                let new_path = dir.join(sub_command);
-                                let metadata = match metadata(&new_path) {
-                                    Ok(m) => m,
-                                    Err(_) => continue,
-                                };
-                                if new_path.exists() && metadata.is_file() {
-                                    println!("{} is {}", sub_command, new_path.display());
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            if !found {
-                                println!("{}: not found", sub_command)
-                            }
-                        }
-                    },
-                    Some(ShellCommand::Cd { dir }) => {
-                        if let Some(target) = dir {
-                            if target == "~" {
-                                let home_dir = env::var("HOME").unwrap_or_default();
-                                if let Err(_) = env::set_current_dir(&home_dir) {
-                                    println!("cd: {}: No such file or directory", home_dir);
-                                }
-                            } else if let Err(_) = env::set_current_dir(&target) {
-                                println!("cd: {}: No such file or directory", target);
-                            }
-                        } else {
-                            // Default to home directory or do nothing
-                            println!("Usage: cd <directory>");
-                        }
-                    }
-                    Some(ShellCommand::Cat { files }) => {
-                        for path in &files {
-                            match fs::read_to_string(&path) {
-                                Ok(content) => {
-                                    print!("{}", content);
-                                }
-                                Err(_) => {
-                                    eprintln!("cat: {}: No such file or directory", path);
-                                }
-                            }
-                        }
-                        io::stdout().flush().unwrap();
-                    }
-                    None => {
-                        // If not a built-in command, try to execute it
-                        run_external_command(
-                            &parts[0],
-                            &parts[1..].iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
-                        );
+                    Err(_) => {
+                        eprintln!("cat: {}: No such file or directory", path);
                     }
                 }
             }
-            Err(_) => {
-                // Not a built-in command, try to execute it
-                run_external_command(
-                    &parts[0],
-                    &parts[1..].iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
-                );
+            io::stdout().flush().unwrap();
+        }
+        None => {
+            // If not a built-in command, try to execute it
+            let args: Vec<&str> = parts[1..].iter().map(|s| s.as_str()).collect();
+            run_external_command(&parts[0], &args);
+        }
+    }
+    Ok(())
+}
+
+/// Handle the 'type' built-in command
+fn handle_type_command(name: &str) {
+    match name {
+        "exit" | "echo" | "type" | "pwd" | "cd" => {
+            println!("{} is a shell builtin", name)
+        }
+        _ => {
+            let path = env::var("PATH").unwrap_or_default();
+            let directories = split_paths(&path);
+            let mut found = false;
+            for dir in directories {
+                let new_path = dir.join(name);
+                if let Ok(meta) = metadata(&new_path) {
+                    if new_path.exists() && meta.is_file() {
+                        println!("{} is {}", name, new_path.display());
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if !found {
+                println!("{}: not found", name)
             }
         }
     }
 }
 
-/// Fallback logic to run external commands (not built-ins)
-fn run_external_command(command: &str, args: &[&str]) {
-    //  Check for redirection
-    let mut redirect_file: Option<&str> = None;
-    let mut redirect_stderr_file: Option<&str> = None;
-    let mut filtered_args: Vec<&str> = Vec::new();
-    let mut redirect_mode = RedirectionMode::Overwrite;
+/// Handle the 'cd' built-in command
+fn handle_cd_command(dir: Option<String>) {
+    match dir {
+        Some(target) => {
+            if target == "~" {
+                let home_dir = env::var("HOME").unwrap_or_default();
+                if let Err(_) = env::set_current_dir(&home_dir) {
+                    println!("cd: {}: No such file or directory", home_dir);
+                }
+            } else if let Err(_) = env::set_current_dir(&target) {
+                println!("cd: {}: No such file or directory", target);
+            }
+        }
+        None => {
+            println!("Usage: cd <directory>");
+        }
+    }
+}
 
-    // Find redirection operator
+/// Parse command args for redirection operators and build filtered arguments
+fn parse_redirection<'a>(
+    args: &'a [&'a str],
+) -> (Vec<&'a str>, Option<Redirection>, Option<Redirection>) {
+    let mut filtered_args = Vec::new();
+    let mut stdout_redirect = None;
+    let mut stderr_redirect = None;
+
     let mut i = 0;
     while i < args.len() {
         if (args[i] == "1>" || args[i] == ">") && i + 1 < args.len() {
-            redirect_file = Some(args[i + 1]);
-            redirect_mode = RedirectionMode::Overwrite;
-            i += 2; // Skip the '>' and the filename
+            stdout_redirect = Some(Redirection {
+                file: args[i + 1].to_string(),
+                mode: RedirectionMode::Overwrite,
+            });
+            i += 2;
         } else if (args[i] == "1>>" || args[i] == ">>") && i + 1 < args.len() {
-            redirect_file = Some(args[i + 1]);
-            redirect_mode = RedirectionMode::Append;
-            i += 2; // Skip the '>>' and the filename
+            stdout_redirect = Some(Redirection {
+                file: args[i + 1].to_string(),
+                mode: RedirectionMode::Append,
+            });
+            i += 2;
         } else if args[i] == "2>" && i + 1 < args.len() {
-            redirect_stderr_file = Some(args[i + 1]);
-            i += 2; // Skip the '2>' and the filename
+            stderr_redirect = Some(Redirection {
+                file: args[i + 1].to_string(),
+                mode: RedirectionMode::Overwrite,
+            });
+            i += 2;
+        } else if args[i] == "2>>" && i + 1 < args.len() {
+            stderr_redirect = Some(Redirection {
+                file: args[i + 1].to_string(),
+                mode: RedirectionMode::Append,
+            });
+            i += 2;
         } else {
             filtered_args.push(args[i]);
             i += 1;
         }
     }
 
-    let path_var = env::var("PATH").unwrap_or_default();
-    let directories = env::split_paths(&path_var);
+    (filtered_args, stdout_redirect, stderr_redirect)
+}
 
-    // Set up stdout redirection if needed
-    let stdout_redirection = if let Some(filename) = redirect_file {
-        match match redirect_mode {
-            RedirectionMode::Overwrite => File::create(filename),
-            RedirectionMode::Append => File::options().append(true).create(true).open(filename),
-        } {
-            Ok(f) => Some(Stdio::from(f)),
-            Err(e) => {
-                println!("Failed to create output file: {}", e);
-                return;
+/// Create a file handle for redirection
+fn setup_redirection(redirect: &Option<Redirection>) -> Option<Stdio> {
+    match redirect {
+        Some(redirection) => {
+            let file_result = match redirection.mode {
+                RedirectionMode::Overwrite => File::create(&redirection.file),
+                RedirectionMode::Append => File::options()
+                    .append(true)
+                    .create(true)
+                    .open(&redirection.file),
+            };
+
+            match file_result {
+                Ok(file) => Some(Stdio::from(file)),
+                Err(e) => {
+                    println!("Failed to create output file: {}", e);
+                    None
+                }
             }
         }
-    } else {
-        None
-    };
+        None => None,
+    }
+}
 
-    // Set up stderr redirection if needed
-    let stderr_redirection = if let Some(filename) = redirect_stderr_file {
-        match File::create(filename) {
-            Ok(f) => Some(Stdio::from(f)),
-            Err(e) => {
-                println!("Failed to create output file: {}", e);
-                return;
-            }
+/// Run external (non-builtin) commands
+fn run_external_command(command: &str, args: &[&str]) {
+    let (filtered_args, stdout_redirect, stderr_redirect) = parse_redirection(args);
+
+    // First try direct execution (if command has path separators)
+    if command.contains('/') {
+        // Set up redirections for direct execution
+        let stdout_redirection = setup_redirection(&stdout_redirect);
+        let stderr_redirection = setup_redirection(&stderr_redirect);
+        
+        if try_spawn_command_direct(
+            command,
+            &filtered_args,
+            stdout_redirection,
+            stderr_redirection,
+        ) {
+            return;
         }
-    } else {
-        None
-    };
+        println!("{}: command not found", command);
+        return;
+    }
 
+    // Set up redirections for normal command and PATH search
+    let stdout_redirection = setup_redirection(&stdout_redirect);
+    let stderr_redirection = setup_redirection(&stderr_redirect);
+
+    // Try normal command execution
+    if try_spawn_command(
+        command,
+        &filtered_args,
+        stdout_redirection,
+        stderr_redirection,
+    ) {
+        return;
+    }
+
+    // If no path separators, search in PATH
+    let stdout_redirection = setup_redirection(&stdout_redirect);
+    let stderr_redirection = setup_redirection(&stderr_redirect);
+    
+    if try_spawn_from_path(
+        command,
+        &filtered_args,
+        stdout_redirection,
+        stderr_redirection,
+    ) {
+        return;
+    }
+
+    println!("{}: command not found", command);
+}
+
+/// Try to spawn a command with the given name directly
+fn try_spawn_command(
+    command: &str,
+    args: &[&str],
+    stdout: Option<Stdio>,
+    stderr: Option<Stdio>,
+) -> bool {
     let mut cmd = Command::new(command);
-    cmd.args(&filtered_args);
+    cmd.args(args);
 
-    if let Some(stdout) = stdout_redirection {
+    if let Some(stdout) = stdout {
         cmd.stdout(stdout);
     }
-    if let Some(stderr) = stderr_redirection {
+    if let Some(stderr) = stderr {
         cmd.stderr(stderr);
     }
 
     match cmd.spawn() {
         Ok(mut child) => {
             child.wait().unwrap();
-            return;
+            true
         }
-        Err(_) => {}
+        Err(_) => false,
+    }
+}
+
+/// Try to spawn a command using a direct path
+fn try_spawn_command_direct(
+    path: &str,
+    args: &[&str],
+    stdout: Option<Stdio>,
+    stderr: Option<Stdio>,
+) -> bool {
+    let mut cmd = Command::new(path);
+    cmd.args(args);
+
+    if let Some(stdout) = stdout {
+        cmd.stdout(stdout);
+    }
+    if let Some(stderr) = stderr {
+        cmd.stderr(stderr);
     }
 
-    // First try direct execution (if command has path separators)
-    if command.contains('/') {
-        let mut cmd = Command::new(command);
-        cmd.args(filtered_args);
-        match cmd.spawn() {
-            Ok(mut child) => {
-                child.wait().unwrap();
-                return;
-            }
-            Err(_) => {
-                println!("{}: command not found", command);
-                return;
-            }
+    match cmd.spawn() {
+        Ok(mut child) => {
+            child.wait().unwrap();
+            true
         }
+        Err(_) => false,
     }
+}
 
-    // If no path separators, search in PATH
-    let found = false;
+/// Try to spawn a command by searching in PATH
+fn try_spawn_from_path(
+    command: &str,
+    args: &[&str],
+    stdout: Option<Stdio>,
+    stderr: Option<Stdio>,
+) -> bool {
+    let path_var = env::var("PATH").unwrap_or_default();
+    let directories = env::split_paths(&path_var);
+
     for dir in directories {
-        let new_path = dir.join(command);
+        let command_path = dir.join(command);
 
-        if new_path.exists() {
-            let mut cmd = Command::new(&new_path); // Use the full path to execute
+        if command_path.exists() {
+            let mut cmd = Command::new(&command_path);
             cmd.arg0(command);
+            cmd.args(args);
 
-            cmd.args(filtered_args);
+            if let Some(stdout) = stdout {
+                cmd.stdout(stdout);
+                break; // Exit after using stdout once
+            }
+            if let Some(stderr) = stderr {
+                cmd.stderr(stderr);
+            }
+
             match cmd.spawn() {
                 Ok(mut child) => {
                     child.wait().unwrap();
+                    return true;
                 }
                 Err(e) => {
                     println!("Failed to execute {}: {}", command, e);
+                    return false;
                 }
             }
-            return;
         }
     }
 
-    if !found {
-        println!("{}: command not found", command);
-    }
+    false
 }
