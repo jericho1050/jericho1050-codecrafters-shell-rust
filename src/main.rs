@@ -1,12 +1,17 @@
+use clap::Command as ClapCommand;
 #[allow(unused_imports)]
 use clap::{Parser, Subcommand};
 use shell_words;
 use std::env::split_paths;
 use std::fs;
 use std::fs::metadata;
+use std::fs::File;
 use std::io::{self, Write};
+use std::process;
+use std::process::Command;
+use std::os::unix::process::CommandExt;  // Import the Unix-specific CommandExt trait
 use std::vec;
-use std::{env, process::exit, process::Command};
+use std::{env, process::exit, process::Stdio};
 
 /// A simple interactive shell that supports basic commands
 #[derive(Parser, Debug)]
@@ -73,6 +78,17 @@ fn main() {
             continue;
         }
 
+        // Check if the command includes redirection operators
+        let has_redirection = parts.iter().any(|part| *part == ">" || *part == "1>");
+
+        // If there's redirection, skip built-in command handling for echo
+        if has_redirection {
+            run_external_command(
+                &parts[0],
+                &parts[1..].iter().map(|s| s.as_str()).collect::<Vec<&str>>(),
+            );
+            continue;
+        }
         // Try to parse as built-in command with clap
         let mut clap_args = vec!["your_shell".to_string()];
         clap_args.extend(parts.iter().cloned());
@@ -168,13 +184,58 @@ fn main() {
 
 /// Fallback logic to run external commands (not built-ins)
 fn run_external_command(command: &str, args: &[&str]) {
+    //  Check for redirection
+    let mut redirect_file: Option<&str> = None;
+    let mut filtered_args: Vec<&str> = Vec::new();
+
+    // Find redirection operator
+    let mut i = 0;
+    while i < args.len() {
+        if (args[i] == ">" || args[i] == "1>") && i + 1 < args.len() {
+            redirect_file = Some(args[i + 1]);
+            i += 2; // Skip the '>' and the filename
+        } else {
+            filtered_args.push(args[i]);
+            i += 1;
+        }
+    }
+
     let path_var = env::var("PATH").unwrap_or_default();
     let directories = env::split_paths(&path_var);
+
+    // constructing the Command:
+    if let Some(filename) = redirect_file {
+        // Set up redirection
+        // You'll need to open the file and set it as stdout for the command
+        // Look at std::fs::File::create and Command::stdout
+        match File::create(filename) {
+            Ok(f) => {
+                let output = Stdio::from(f);
+
+                let mut cmd = Command::new(command); // Use the full path to execute
+                cmd.args(filtered_args);
+                cmd.stdout(output);
+                match cmd.spawn() {
+                    Ok(mut child) => {
+                        child.wait().unwrap();
+                    }
+                    Err(e) => {
+                        println!("Failed to execute {}: {}", command, e);
+                    }
+                }
+                return;
+            }
+            Err(e) => {
+                println!("Failed to create output file: {}", e);
+                return;
+            }
+        }
+    }
 
     // First try direct execution (if command has path separators)
     if command.contains('/') {
         let mut cmd = Command::new(command);
-        cmd.args(args);
+        cmd.args(filtered_args);
         match cmd.spawn() {
             Ok(mut child) => {
                 child.wait().unwrap();
@@ -194,7 +255,9 @@ fn run_external_command(command: &str, args: &[&str]) {
 
         if new_path.exists() {
             let mut cmd = Command::new(&new_path); // Use the full path to execute
-            cmd.args(args);
+            cmd.arg0(command);
+
+            cmd.args(filtered_args);
             match cmd.spawn() {
                 Ok(mut child) => {
                     child.wait().unwrap();
