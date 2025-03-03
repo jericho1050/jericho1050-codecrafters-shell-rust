@@ -94,6 +94,48 @@ impl Completer for ShellCompleter {
             }
         }
 
+        // Add matching executables from PATH
+        if let Ok(path_var) = env::var("PATH") {
+            for dir in env::split_paths(&path_var) {
+                if let Ok(entries) = fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        if let Ok(file_type) = entry.file_type() {
+                            if file_type.is_file() {
+                                if let Ok(file_name) = entry.file_name().into_string() {
+                                    if file_name.starts_with(current) {
+                                        // Check if file is executable on Unix systems
+                                        #[cfg(unix)]
+                                        {
+                                            use std::os::unix::fs::PermissionsExt;
+                                            if let Ok(metadata) = entry.metadata() {
+                                                let mode = metadata.permissions().mode();
+                                                // Check if file has execute permission
+                                                if mode & 0o111 != 0 {
+                                                    completions.push(Pair {
+                                                        display: file_name.clone(),
+                                                        replacement: file_name + " ",
+                                                    });
+                                                }
+                                            }
+                                        }
+
+                                        // Non-Unix fallback (just check file exists)
+                                        #[cfg(not(unix))]
+                                        {
+                                            completions.push(Pair {
+                                                display: file_name.clone(),
+                                                replacement: file_name + " ",
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Ok((word_start, completions))
     }
 }
