@@ -97,23 +97,28 @@ impl Completer for ShellCompleter {
         let word_start = line[..pos].rfind(' ').map(|i| i + 1).unwrap_or(0);
         let current = &line[word_start..pos];
 
-        // Add matching builtins to completions
+        // Track names to avoid duplicates
+        let mut seen_names = std::collections::HashSet::new();
+
+        // Add matching builtins to completions (with space)
         for cmd in &builtins {
-            if cmd.starts_with(current) {
+            if cmd.starts_with(current) && seen_names.insert(cmd.to_string()) {
                 completions.push(Pair {
                     display: cmd.to_string(),
-                    replacement: cmd.to_string() + " ",
+                    replacement: format!("{} ", cmd), // Add space after command
                 });
             }
         }
 
-        // Add matching executables from PATH
+        // Add matching executables from PATH (with space)
         if let Ok(path_var) = env::var("PATH") {
             for dir in split_paths(&path_var) {
                 if let Ok(entries) = fs::read_dir(dir) {
                     for entry in entries.flatten() {
                         if let Ok(file_name) = entry.file_name().into_string() {
-                            if !file_name.starts_with(current) {
+                            if !file_name.starts_with(current)
+                                || !seen_names.insert(file_name.clone())
+                            {
                                 continue;
                             }
 
@@ -129,7 +134,7 @@ impl Completer for ShellCompleter {
                             if is_executable {
                                 completions.push(Pair {
                                     display: file_name.clone(),
-                                    replacement: file_name + " ",
+                                    replacement: format!("{} ", file_name), // Add space after command
                                 });
                             }
                         }
@@ -137,6 +142,9 @@ impl Completer for ShellCompleter {
                 }
             }
         }
+
+        // Sort completions alphabetically by display text
+        completions.sort_by(|a, b| a.display.cmp(&b.display));
 
         Ok((word_start, completions))
     }
@@ -238,6 +246,7 @@ fn handle_command_input() -> Result<(), ()> {
 fn read_input() -> Option<String> {
     let config = Config::builder()
         .completion_type(CompletionType::List)
+        .completion_prompt_limit(100)
         .build();
 
     // Create a new editor with DefaultHistory for the second type parameter
