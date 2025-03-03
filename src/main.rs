@@ -13,6 +13,7 @@ use std::fs;
 use std::fs::metadata;
 use std::fs::File;
 use std::io::{self, Write};
+use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::process::CommandExt; // Import the Unix-specific CommandExt trait
 use std::process::Command;
 use std::vec;
@@ -66,7 +67,19 @@ struct Redirection {
     mode: RedirectionMode,
 }
 
-struct ShellCompleter;
+struct ShellCompleter {
+    last_tab_line: String,
+    tab_count: u8,
+}
+
+impl Default for ShellCompleter {
+    fn default() -> Self {
+        Self {
+            last_tab_line: String::new(),
+            tab_count: 0,
+        }
+    }
+}
 
 impl Completer for ShellCompleter {
     type Candidate = Pair;
@@ -89,46 +102,35 @@ impl Completer for ShellCompleter {
             if cmd.starts_with(current) {
                 completions.push(Pair {
                     display: cmd.to_string(),
-                    replacement: cmd.to_string() + " ", // Add a space after the command
+                    replacement: cmd.to_string() + " ",
                 });
             }
         }
 
         // Add matching executables from PATH
         if let Ok(path_var) = env::var("PATH") {
-            for dir in env::split_paths(&path_var) {
+            for dir in split_paths(&path_var) {
                 if let Ok(entries) = fs::read_dir(dir) {
                     for entry in entries.flatten() {
-                        if let Ok(file_type) = entry.file_type() {
-                            if file_type.is_file() {
-                                if let Ok(file_name) = entry.file_name().into_string() {
-                                    if file_name.starts_with(current) {
-                                        // Check if file is executable on Unix systems
-                                        #[cfg(unix)]
-                                        {
-                                            use std::os::unix::fs::PermissionsExt;
-                                            if let Ok(metadata) = entry.metadata() {
-                                                let mode = metadata.permissions().mode();
-                                                // Check if file has execute permission
-                                                if mode & 0o111 != 0 {
-                                                    completions.push(Pair {
-                                                        display: file_name.clone(),
-                                                        replacement: file_name + " ",
-                                                    });
-                                                }
-                                            }
-                                        }
+                        if let Ok(file_name) = entry.file_name().into_string() {
+                            if !file_name.starts_with(current) {
+                                continue;
+                            }
 
-                                        // Non-Unix fallback (just check file exists)
-                                        #[cfg(not(unix))]
-                                        {
-                                            completions.push(Pair {
-                                                display: file_name.clone(),
-                                                replacement: file_name + " ",
-                                            });
-                                        }
-                                    }
-                                }
+                            #[cfg(unix)]
+                            let is_executable = entry
+                                .metadata()
+                                .map(|m| m.permissions().mode() & 0o111 != 0)
+                                .unwrap_or(false);
+
+                            #[cfg(not(unix))]
+                            let is_executable = true;
+
+                            if is_executable {
+                                completions.push(Pair {
+                                    display: file_name.clone(),
+                                    replacement: file_name + " ",
+                                });
                             }
                         }
                     }
@@ -233,8 +235,6 @@ fn handle_command_input() -> Result<(), ()> {
     handle_command_with_clap(&parts)
 }
 
-/// Read user input from
-/// Read user input from stdin with tab completion
 fn read_input() -> Option<String> {
     let config = Config::builder()
         .completion_type(CompletionType::List)
@@ -244,7 +244,7 @@ fn read_input() -> Option<String> {
     let mut rl = Editor::<ShellCompleter, DefaultHistory>::with_config(config).unwrap();
 
     // Set up the completer
-    rl.set_helper(Some(ShellCompleter));
+    rl.set_helper(Some(ShellCompleter::default())); // Use default instead of empty struct
 
     // Enable automatic history
     rl.set_auto_add_history(true);
@@ -268,6 +268,7 @@ fn read_input() -> Option<String> {
         }
     }
 }
+
 /// Parse and execute a command using clap
 fn handle_command_with_clap(parts: &[String]) -> Result<(), ()> {
     let mut clap_args = vec!["your_shell".to_string()];
