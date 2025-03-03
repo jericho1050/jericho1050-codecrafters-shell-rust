@@ -1,6 +1,13 @@
 #[allow(unused_imports)]
 use clap::{Parser, Subcommand};
-use shell_words;
+use rustyline::completion::{Completer, Pair};
+use rustyline::config::Configurer;
+use rustyline::error::ReadlineError;
+use rustyline::highlight::{CmdKind, Highlighter};
+use rustyline::hint::Hinter;
+use rustyline::history::DefaultHistory;
+use rustyline::validate::{self, Validator};
+use rustyline::{CompletionType, Config, Context, Editor, Helper};
 use std::env::split_paths;
 use std::fs;
 use std::fs::metadata;
@@ -59,6 +66,78 @@ struct Redirection {
     mode: RedirectionMode,
 }
 
+struct ShellCompleter;
+
+impl Completer for ShellCompleter {
+    type Candidate = Pair;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &Context<'_>,
+    ) -> Result<(usize, Vec<Pair>), ReadlineError> {
+        let builtins = ["echo", "exit", "pwd", "cd", "type", "cat"];
+        let mut completions = Vec::new();
+
+        // Get the word being completed
+        let word_start = line[..pos].rfind(' ').map(|i| i + 1).unwrap_or(0);
+        let current = &line[word_start..pos];
+
+        // Add matching builtins to completions
+        for cmd in &builtins {
+            if cmd.starts_with(current) {
+                completions.push(Pair {
+                    display: cmd.to_string(),
+                    replacement: cmd.to_string() + " ", // Add a space after the command
+                });
+            }
+        }
+
+        Ok((word_start, completions))
+    }
+}
+impl Hinter for ShellCompleter {
+    type Hint = String;
+
+    fn hint(&self, line: &str, pos: usize, ctx: &Context<'_>) -> Option<Self::Hint> {
+        None
+    }
+}
+
+impl Highlighter for ShellCompleter {
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
+        &'s self,
+        prompt: &'p str,
+        _default: bool,
+    ) -> std::borrow::Cow<'b, str> {
+        std::borrow::Cow::Borrowed(prompt)
+    }
+
+    fn highlight_hint<'h>(&self, hint: &'h str) -> std::borrow::Cow<'h, str> {
+        std::borrow::Cow::Borrowed(hint)
+    }
+
+    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> std::borrow::Cow<'l, str> {
+        std::borrow::Cow::Borrowed(line)
+    }
+
+    fn highlight_char(&self, _line: &str, _pos: usize, _cmd_kind: CmdKind) -> bool {
+        false
+    }
+}
+
+impl Validator for ShellCompleter {
+    fn validate(
+        &self,
+        _ctx: &mut validate::ValidationContext<'_>,
+    ) -> Result<validate::ValidationResult, ReadlineError> {
+        Ok(validate::ValidationResult::Valid(None))
+    }
+}
+
+impl Helper for ShellCompleter {}
+
 fn main() {
     loop {
         // Display prompt and get user input
@@ -72,9 +151,6 @@ fn main() {
 // Process a single command input
 /// Process a single command input
 fn handle_command_input() -> Result<(), ()> {
-    print!("$ ");
-    io::stdout().flush().unwrap();
-
     // Wait for user input
     let input = match read_input() {
         Some(input) => input,
@@ -115,21 +191,41 @@ fn handle_command_input() -> Result<(), ()> {
     handle_command_with_clap(&parts)
 }
 
-/// Read user input from stdin
+/// Read user input from
+/// Read user input from stdin with tab completion
 fn read_input() -> Option<String> {
-    let mut input = String::new();
-    if io::stdin().read_line(&mut input).is_err() {
-        return None;
-    }
+    let config = Config::builder()
+        .completion_type(CompletionType::List)
+        .build();
 
-    let input = input.trim();
-    if input.is_empty() {
-        return None;
-    }
+    // Create a new editor with DefaultHistory for the second type parameter
+    let mut rl = Editor::<ShellCompleter, DefaultHistory>::with_config(config).unwrap();
 
-    Some(input.to_string())
+    // Set up the completer
+    rl.set_helper(Some(ShellCompleter));
+
+    // Enable automatic history
+    rl.set_auto_add_history(true);
+
+    // Read a line
+    match rl.readline("$ ") {
+        Ok(line) => Some(line),
+        Err(ReadlineError::Interrupted) => {
+            // CTRL-C should exit the shell
+            println!("^C");
+            exit(0);
+        }
+        Err(ReadlineError::Eof) => {
+            // CTRL-D (EOF) should also exit the shell
+            println!("exit");
+            exit(0);
+        }
+        Err(err) => {
+            eprintln!("Error: {:?}", err);
+            None
+        }
+    }
 }
-
 /// Parse and execute a command using clap
 fn handle_command_with_clap(parts: &[String]) -> Result<(), ()> {
     let mut clap_args = vec!["your_shell".to_string()];
@@ -307,7 +403,7 @@ fn run_external_command(command: &str, args: &[&str]) {
         // Set up redirections for direct execution
         let stdout_redirection = setup_redirection(&stdout_redirect);
         let stderr_redirection = setup_redirection(&stderr_redirect);
-        
+
         if try_spawn_command_direct(
             command,
             &filtered_args,
@@ -337,7 +433,7 @@ fn run_external_command(command: &str, args: &[&str]) {
     // If no path separators, search in PATH
     let stdout_redirection = setup_redirection(&stdout_redirect);
     let stderr_redirection = setup_redirection(&stderr_redirect);
-    
+
     if try_spawn_from_path(
         command,
         &filtered_args,
