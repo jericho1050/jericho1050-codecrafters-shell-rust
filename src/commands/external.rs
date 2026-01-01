@@ -43,17 +43,11 @@ fn execute_command_direct(
 
     setup_redirection(&mut cmd, stdout_redir, stderr_redir)?;
 
-    let status = cmd.status().map_err(|e| {
+    cmd.status().map_err(|e| {
         ShellError::ExecutionError(format!("Failed to execute {}: {}", command_path, e))
     })?;
 
-    if !status.success() {
-        return Err(ShellError::ExecutionError(format!(
-            "Command exited with status: {}",
-            status.code().unwrap_or(-1)
-        )));
-    }
-
+    // Non-zero exit status is normal, not an error
     Ok(())
 }
 
@@ -69,17 +63,10 @@ fn execute_command_simple(
 
     setup_redirection(&mut cmd, stdout_redir, stderr_redir)?;
 
-    let status = cmd
-        .status()
+    cmd.status()
         .map_err(|_| ShellError::CommandNotFound(command_name.to_string()))?;
 
-    if !status.success() {
-        return Err(ShellError::ExecutionError(format!(
-            "Command exited with status: {}",
-            status.code().unwrap_or(-1)
-        )));
-    }
-
+    // Non-zero exit status is normal, not an error
     Ok(())
 }
 
@@ -103,13 +90,8 @@ fn execute_command_from_path(
             setup_redirection(&mut cmd, stdout_redir, stderr_redir)?;
 
             match cmd.status() {
-                Ok(status) => {
-                    if !status.success() {
-                        return Err(ShellError::ExecutionError(format!(
-                            "Command exited with status: {}",
-                            status.code().unwrap_or(-1)
-                        )));
-                    }
+                Ok(_) => {
+                    // Non-zero exit status is normal, not an error
                     return Ok(());
                 }
                 Err(e) => {
