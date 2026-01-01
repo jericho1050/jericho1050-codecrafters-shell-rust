@@ -1,6 +1,7 @@
 use crate::commands::{handle_command_with_clap, run_external_command};
 use crate::completion::ShellCompleter;
 use crate::errors::{ShellError, ShellResult};
+use crate::pipeline::{execute_pipeline, is_pipeline, split_pipeline};
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::{ColorMode, Config, Editor};
@@ -44,6 +45,17 @@ pub fn read_input() -> ShellResult<String> {
 
 /// Handle a command input line
 pub fn handle_command_input(input: &str) -> ShellResult<()> {
+    // Check for pipeline
+    if is_pipeline(input) {
+        let stages: Vec<&str> = split_pipeline(input);
+        let parsed_stages: Result<Vec<Vec<String>>, _> = stages
+            .into_iter()
+            .map(|stage| shell_words::split(stage).map_err(|_| ShellError::InvalidQuoting))
+            .collect();
+        
+        return execute_pipeline(parsed_stages?);
+    }
+
     // Parse the command using shell-words
     let args = shell_words::split(input)
         .map_err(|_| ShellError::InvalidQuoting)?;

@@ -7,7 +7,7 @@ use clap::Parser;
 
 pub use builtin::{
     handle_cat_command, handle_cd_command, handle_echo_command, handle_pwd_command,
-    handle_type_command,
+    handle_type_command, handle_tail_command, handle_head_command, handle_wc_command,
 };
 pub use cli::{ShellArgs, ShellCommand};
 pub use external::run_external_command;
@@ -27,5 +27,9 @@ pub fn handle_command_with_clap(args: &[String]) -> ShellResult<()> {
         ShellCommand::Type { name } => handle_type_command(&name),
         ShellCommand::Cd { path } => handle_cd_command(path.as_deref()),
         ShellCommand::Cat { files } => handle_cat_command(&files),
+        ShellCommand::Tail { files, lines } => handle_tail_command(&files, lines),
+        ShellCommand::Head { files, lines } => handle_head_command(&files, lines),
+        ShellCommand::Wc { files } => handle_wc_command(&files),
+
     }
 }

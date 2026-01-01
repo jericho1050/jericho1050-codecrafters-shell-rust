@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod completion;
 pub mod errors;
+pub mod pipeline;
 pub mod redirection;
 pub mod repl;
 

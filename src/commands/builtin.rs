@@ -6,7 +6,7 @@ use std::path::Path;
 
 /// Check if a command is a builtin or exists in PATH
 pub fn handle_type_command(name: &str) -> ShellResult<()> {
-    let builtins = ["echo", "exit", "type", "pwd", "cd", "cat"];
+    let builtins = ["echo", "exit", "type", "pwd", "cd", "cat", "tail", "head", "wc"];
 
     if builtins.contains(&name) {
         println!("{} is a shell builtin", name);
@@ -76,6 +76,37 @@ pub fn handle_pwd_command() -> ShellResult<()> {
 
 /// Execute the cat command
 pub fn handle_cat_command(files: &[String]) -> ShellResult<()> {
+    for file in files {
+        let content = fs::read_to_string(file)
+            .map_err(|e| ShellError::IoError(e))?;
+        print!("{}", content);
+        io::stdout().flush().map_err(|e| ShellError::IoError(e))?;
+    }
+    Ok(())
+}
+
+
+pub fn handle_tail_command(files: &[String], lines: Option<usize>) -> ShellResult<()> {
+    for file in files {
+        let content = fs::read_to_string(file)
+            .map_err(|e| ShellError::IoError(e))?;
+        print!("{}", content);
+        io::stdout().flush().map_err(|e| ShellError::IoError(e))?;
+    }
+    Ok(())
+}
+
+pub fn handle_head_command(files: &[String], lines: Option<usize>) -> ShellResult<()> {
+    for file in files {
+        let content = fs::read_to_string(file)
+            .map_err(|e| ShellError::IoError(e))?;
+        print!("{}", content);
+        io::stdout().flush().map_err(|e| ShellError::IoError(e))?;
+    }
+    Ok(())
+}
+
+pub fn handle_wc_command(files: &[String]) -> ShellResult<()> {
     for file in files {
         let content = fs::read_to_string(file)
             .map_err(|e| ShellError::IoError(e))?;
