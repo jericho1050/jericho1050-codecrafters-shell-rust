@@ -6,7 +6,7 @@ use std::path::Path;
 
 /// Check if a command is a builtin or exists in PATH
 pub fn handle_type_command(name: &str) -> ShellResult<()> {
-    let builtins = ["echo", "exit", "type", "pwd", "cd", "cat", "tail", "head", "wc"];
+    let builtins = ["echo", "exit", "type", "pwd", "cd"];
 
     if builtins.contains(&name) {
         println!("{} is a shell builtin", name);

@@ -35,26 +35,4 @@ pub enum ShellCommand {
         /// Directory to change to
         path: Option<String>,
     },
-    /// Concatenate and print files
-    Cat {
-        /// Files to concatenate
-        files: Vec<String>,
-    },
-    Tail {
-        /// Files to tail
-        files: Vec<String>,
-        /// Number of lines to tail
-        lines: Option<usize>,
-    },
-    Head {
-        /// Files to head
-        files: Vec<String>,
-        /// Number of lines to head
-        lines: Option<usize>,
-    },
-    Wc {
-        /// Files to wc
-        files: Vec<String>,
-    },
-
 }
