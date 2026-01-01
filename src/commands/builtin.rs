@@ -17,9 +17,17 @@ pub fn handle_type_command(name: &str) -> ShellResult<()> {
     if let Ok(path) = env::var("PATH") {
         for dir in path.split(':') {
             let full_path = format!("{}/{}", dir, name);
-            if Path::new(&full_path).exists() {
-                println!("{} is {}", name, full_path);
-                return Ok(());
+            let path = Path::new(&full_path);
+            if path.exists() {
+                // Check if file has execute permissions
+                if let Ok(metadata) = path.metadata() {
+                    use std::os::unix::fs::PermissionsExt;
+                    let is_executable = metadata.permissions().mode() & 0o111 != 0;
+                    if metadata.is_file() && is_executable {
+                        println!("{} is {}", name, full_path);
+                        return Ok(());
+                    }
+                }
             }
         }
     }
