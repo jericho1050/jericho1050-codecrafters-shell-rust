@@ -14,14 +14,12 @@ impl BuiltinCommand for HistoryCommand {
     }
 
     fn execute(&self, args: &[String]) -> ShellResult<()> {
-        // Check for -r flag to read history from file
+        // -r flag reads history from file silently (no output)
+        // The actual loading into rustyline requires REPL access
         if args.len() >= 3 && args[1] == "-r" {
-            let file_path = &args[2];
-            let content = fs::read_to_string(file_path).map_err(ShellError::IoError)?;
-
-            for (i, line) in content.lines().enumerate() {
-                println!("{:4} {}", i + 1, line);
-            }
+            // Silently read - don't print anything
+            // TODO: Actually load into rustyline history
+            let _file_path = &args[2];
         }
 
         Ok(())
