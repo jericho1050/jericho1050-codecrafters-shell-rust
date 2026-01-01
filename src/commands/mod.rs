@@ -1,33 +1,30 @@
-pub mod builtin;
-pub mod cli;
+pub mod builtins;
 pub mod external;
+pub mod registry;
+
+pub use external::run_external_command;
+pub use registry::BUILTINS;
 
 use crate::errors::ShellResult;
-use clap::Parser;
 
-pub use builtin::{
-    handle_cd_command, handle_echo_command, handle_pwd_command, handle_type_command,
-};
-pub use cli::{ShellArgs, ShellCommand};
-pub use external::run_external_command;
-
-/// Parse and execute a command using clap
-pub fn handle_command_with_clap(args: &[String]) -> ShellResult<()> {
-    // Prepend a dummy program name since clap expects arg[0] to be the program name
-    let mut clap_args = vec!["shell".to_string()];
-    clap_args.extend(args.iter().cloned());
-
-    let shell_args = ShellArgs::try_parse_from(&clap_args).map_err(|e| {
-        crate::errors::ShellError::InputError(format!("Failed to parse command: {}", e))
-    })?;
-
-    match shell_args.command {
-        ShellCommand::Echo { args } => handle_echo_command(&args),
-        ShellCommand::Pwd => handle_pwd_command(),
-        ShellCommand::Exit { code } => {
-            std::process::exit(code);
-        }
-        ShellCommand::Type { name } => handle_type_command(&name),
-        ShellCommand::Cd { path } => handle_cd_command(path.as_deref()),
+/// Execute a command (checks builtins first, then external)
+pub fn handle_command(args: &[String]) -> ShellResult<()> {
+    if args.is_empty() {
+        return Ok(());
     }
+
+    let cmd_name = &args[0];
+
+    // Check for exit command first
+    if let Some(code) = BUILTINS.check_exit(cmd_name, args) {
+        std::process::exit(code);
+    }
+
+    // Try builtin
+    if let Some(result) = BUILTINS.execute(cmd_name, args) {
+        return result;
+    }
+
+    // Fall back to external command
+    run_external_command(args)
 }

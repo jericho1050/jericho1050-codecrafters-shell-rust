@@ -1,3 +1,4 @@
+use crate::commands::BUILTINS;
 use rustyline::completion::{Completer, Pair};
 use rustyline::hint::Hinter;
 use rustyline::highlight::{Highlighter, CmdKind};
@@ -27,9 +28,8 @@ impl Completer for ShellCompleter {
             let prefix = parts.first().map(|s| *s).unwrap_or("");
             let mut candidates = Vec::new();
 
-            // Add builtin commands
-            let builtins = ["echo", "type", "exit", "pwd", "cd", "cat"];
-            for builtin in builtins {
+            // Add builtin commands from registry
+            for builtin in BUILTINS.builtin_names() {
                 if builtin.starts_with(prefix) {
                     candidates.push(Pair {
                         display: builtin.to_string(),

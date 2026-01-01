@@ -1,13 +1,13 @@
 use crate::errors::{ShellError, ShellResult};
 use crate::redirection::parse_redirection;
-use crate::commands::{handle_echo_command, handle_pwd_command, handle_type_command, handle_cd_command};
+use crate::commands::BUILTINS;
 use std::process::{Command, Stdio, Child};
 use std::env;
 use std::path::Path;
 
 /// Check if a command is a builtin
 fn is_builtin(name: &str) -> bool {
-    matches!(name, "echo" | "exit" | "type" | "pwd" | "cd")
+    BUILTINS.is_builtin(name)
 }
 
 /// Split input into pipeline stages
@@ -60,21 +60,14 @@ pub fn execute_pipeline(stages: Vec<Vec<String>>) -> ShellResult<()> {
                 let _ = prev_stdout.read_to_end(&mut buf);
             }
 
-            // Execute builtin
-            match command_name.as_str() {
-                "echo" => handle_echo_command(&filtered_args[1..].iter().map(|s| s.to_string()).collect::<Vec<_>>())?,
-                "pwd" => handle_pwd_command()?,
-                "type" => {
-                    if filtered_args.len() > 1 {
-                        handle_type_command(&filtered_args[1])?;
-                    }
-                }
-                "cd" => handle_cd_command(filtered_args.get(1).map(|s| s.as_str()))?,
-                "exit" => {
-                    let code = filtered_args.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-                    std::process::exit(code);
-                }
-                _ => {}
+            // Check for exit command
+            if let Some(code) = BUILTINS.check_exit(command_name, &filtered_args) {
+                std::process::exit(code);
+            }
+
+            // Execute builtin using registry
+            if let Some(result) = BUILTINS.execute(command_name, &filtered_args) {
+                result?;
             }
 
             // Builtins don't produce piped output, so clear previous_stdout

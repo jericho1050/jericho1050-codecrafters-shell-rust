@@ -1,4 +1,4 @@
-use crate::commands::{handle_command_with_clap, run_external_command};
+use crate::commands::handle_command;
 use crate::completion::ShellCompleter;
 use crate::errors::{ShellError, ShellResult};
 use crate::pipeline::{execute_pipeline, is_pipeline, split_pipeline};
@@ -75,16 +75,6 @@ pub fn handle_command_input(input: &str) -> ShellResult<()> {
     // Set up redirection for builtins (will be restored when guard is dropped)
     let _guard = setup_builtin_redirection(&stdout_redir, &stderr_redir)?;
 
-    // Check if this is a builtin command by trying to parse with clap
-    match handle_command_with_clap(&filtered_args) {
-        Ok(_) => Ok(()),
-        Err(ShellError::InputError(_)) => {
-            // Failed to parse as builtin, try to run as external command
-            run_external_command(&args)
-        }
-        Err(e) => {
-            // Builtin was recognized but failed during execution, don't fall back
-            Err(e)
-        }
-    }
+    // Execute command (handles both builtins and external)
+    handle_command(&filtered_args)
 }

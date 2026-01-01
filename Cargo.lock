@@ -149,6 +149,7 @@ dependencies = [
  "clap",
  "clap_derive",
  "libc",
+ "once_cell",
  "regex",
  "rustyline",
  "shell-words",
