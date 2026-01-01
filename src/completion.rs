@@ -79,6 +79,11 @@ impl Completer for ShellCompleter {
             candidates.sort_by(|a, b| a.display.cmp(&b.display));
             candidates.dedup_by(|a, b| a.display == b.display);
 
+            // If there's exactly one match, add a trailing space
+            if candidates.len() == 1 {
+                candidates[0].replacement.push(' ');
+            }
+
             Ok((pos - prefix.len(), candidates))
         } else {
             Ok((pos, vec![]))
