@@ -45,8 +45,9 @@ pub fn execute_pipeline(stages: Vec<Vec<String>>) -> ShellResult<()> {
         // Parse any redirections (only meaningful for last command's stdout/stderr)
         let (filtered_args, stdout_redir, stderr_redir) = parse_redirection(args)?;
 
-        // Check if this is a builtin command
-        if is_builtin(command_name) {
+        // Check if this is a builtin command AND it's the last stage
+        // (only handle builtins specially at the end; in the middle, use external versions for piping)
+        if is_last && is_builtin(command_name) {
             // Wait for all previous children first
             for mut child in children.drain(..) {
                 let _ = child.wait();
