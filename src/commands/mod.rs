@@ -14,7 +14,11 @@ pub use external::run_external_command;
 
 /// Parse and execute a command using clap
 pub fn handle_command_with_clap(args: &[String]) -> ShellResult<()> {
-    let shell_args = ShellArgs::try_parse_from(args).map_err(|e| {
+    // Prepend a dummy program name since clap expects arg[0] to be the program name
+    let mut clap_args = vec!["shell".to_string()];
+    clap_args.extend(args.iter().cloned());
+
+    let shell_args = ShellArgs::try_parse_from(&clap_args).map_err(|e| {
         crate::errors::ShellError::InputError(format!("Failed to parse command: {}", e))
     })?;
 
