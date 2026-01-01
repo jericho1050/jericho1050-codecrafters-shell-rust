@@ -78,9 +78,13 @@ pub fn handle_command_input(input: &str) -> ShellResult<()> {
     // Check if this is a builtin command by trying to parse with clap
     match handle_command_with_clap(&filtered_args) {
         Ok(_) => Ok(()),
-        Err(_) => {
-            // Not a builtin, try to run as external command (with original args for redirection)
+        Err(ShellError::InputError(_)) => {
+            // Failed to parse as builtin, try to run as external command
             run_external_command(&args)
+        }
+        Err(e) => {
+            // Builtin was recognized but failed during execution, don't fall back
+            Err(e)
         }
     }
 }

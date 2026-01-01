@@ -77,10 +77,16 @@ pub fn handle_pwd_command() -> ShellResult<()> {
 /// Execute the cat command
 pub fn handle_cat_command(files: &[String]) -> ShellResult<()> {
     for file in files {
-        let content = fs::read_to_string(file)
-            .map_err(|e| ShellError::IoError(e))?;
-        print!("{}", content);
-        io::stdout().flush().map_err(|e| ShellError::IoError(e))?;
+        match fs::read_to_string(file) {
+            Ok(content) => {
+                print!("{}", content);
+                io::stdout().flush().map_err(|e| ShellError::IoError(e))?;
+            }
+            Err(_) => {
+                // Print error to stderr and continue (like real cat)
+                eprintln!("cat: {}: No such file or directory", file);
+            }
+        }
     }
     Ok(())
 }
