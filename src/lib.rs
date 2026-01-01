@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod completion;
 pub mod errors;
+pub mod history;
 pub mod pipeline;
 pub mod redirection;
 pub mod repl;
@@ -13,6 +14,9 @@ pub fn run_shell() -> ShellResult<()> {
     loop {
         match read_input() {
             Ok(input) => {
+                // Add command to history before executing
+                history::add_to_history(&input);
+
                 if let Err(e) = handle_command_input(&input) {
                     match e {
                         ShellError::CommandNotFound(msg) => eprintln!("{}", msg),
