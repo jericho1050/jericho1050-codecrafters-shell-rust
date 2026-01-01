@@ -23,10 +23,11 @@ pub fn run_external_command(args: &[String]) -> ShellResult<()> {
     // Try to execute as a simple command first
     match execute_command_simple(&filtered_args[0], &filtered_args[1..], &stdout_redir, &stderr_redir) {
         Ok(_) => return Ok(()),
-        Err(_) => {
-            // Fall back to PATH search
+        Err(ShellError::CommandNotFound(_)) => {
+            // Only fall back to PATH search if command wasn't found
             execute_command_from_path(command_name, &filtered_args[1..], &stdout_redir, &stderr_redir)
         }
+        Err(e) => Err(e), // Command was found but failed, don't retry
     }
 }
 
