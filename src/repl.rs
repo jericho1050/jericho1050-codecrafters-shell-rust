@@ -2,7 +2,7 @@ use crate::commands::{handle_command_with_clap, run_external_command};
 use crate::completion::ShellCompleter;
 use crate::errors::{ShellError, ShellResult};
 use crate::pipeline::{execute_pipeline, is_pipeline, split_pipeline};
-use crate::redirection::parse_redirection;
+use crate::redirection::{parse_redirection, setup_builtin_redirection};
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::{ColorMode, Config, Editor};
@@ -66,14 +66,16 @@ pub fn handle_command_input(input: &str) -> ShellResult<()> {
     }
 
     // Parse redirections first (for both builtins and external commands)
-    let (filtered_args, _stdout_redir, _stderr_redir) = parse_redirection(&args)?;
+    let (filtered_args, stdout_redir, stderr_redir) = parse_redirection(&args)?;
 
     if filtered_args.is_empty() {
         return Ok(());
     }
 
+    // Set up redirection for builtins (will be restored when guard is dropped)
+    let _guard = setup_builtin_redirection(&stdout_redir, &stderr_redir)?;
+
     // Check if this is a builtin command by trying to parse with clap
-    // Note: Builtins currently don't support redirection, so we just filter out the operators
     match handle_command_with_clap(&filtered_args) {
         Ok(_) => Ok(()),
         Err(_) => {

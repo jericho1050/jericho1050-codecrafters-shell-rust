@@ -1,5 +1,7 @@
 use crate::errors::{ShellError, ShellResult};
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
+use std::io;
+use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::process::{Command, Stdio};
 
 /// Redirection mode (overwrite or append)
@@ -119,4 +121,87 @@ pub fn setup_redirection(
     }
 
     Ok(())
+}
+
+/// Guard that restores stdout/stderr when dropped
+pub struct RedirectionGuard {
+    saved_stdout: Option<File>,
+    saved_stderr: Option<File>,
+}
+
+impl Drop for RedirectionGuard {
+    fn drop(&mut self) {
+        // Flush stdout/stderr before restoring
+        let _ = io::Write::flush(&mut io::stdout());
+        let _ = io::Write::flush(&mut io::stderr());
+
+        if let Some(saved) = self.saved_stdout.take() {
+            unsafe {
+                libc::dup2(saved.as_raw_fd(), libc::STDOUT_FILENO);
+            }
+        }
+        if let Some(saved) = self.saved_stderr.take() {
+            unsafe {
+                libc::dup2(saved.as_raw_fd(), libc::STDERR_FILENO);
+            }
+        }
+    }
+}
+
+/// Set up file redirection for builtins (redirects process stdout/stderr)
+/// Returns a guard that restores the original file descriptors when dropped
+pub fn setup_builtin_redirection(
+    stdout_redir: &Option<Redirection>,
+    stderr_redir: &Option<Redirection>,
+) -> ShellResult<RedirectionGuard> {
+    let mut guard = RedirectionGuard {
+        saved_stdout: None,
+        saved_stderr: None,
+    };
+
+    if let Some(redir) = stdout_redir {
+        // Save current stdout
+        let saved_fd = unsafe { libc::dup(libc::STDOUT_FILENO) };
+        if saved_fd >= 0 {
+            guard.saved_stdout = Some(unsafe { File::from_raw_fd(saved_fd) });
+        }
+
+        // Open the redirect file
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(matches!(redir.mode, RedirectionMode::Overwrite))
+            .append(matches!(redir.mode, RedirectionMode::Append))
+            .open(&redir.file)
+            .map_err(|e| ShellError::RedirectionError(format!("Failed to open '{}': {}", redir.file, e)))?;
+
+        // Redirect stdout to file
+        unsafe {
+            libc::dup2(file.as_raw_fd(), libc::STDOUT_FILENO);
+        }
+    }
+
+    if let Some(redir) = stderr_redir {
+        // Save current stderr
+        let saved_fd = unsafe { libc::dup(libc::STDERR_FILENO) };
+        if saved_fd >= 0 {
+            guard.saved_stderr = Some(unsafe { File::from_raw_fd(saved_fd) });
+        }
+
+        // Open the redirect file
+        let file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(matches!(redir.mode, RedirectionMode::Overwrite))
+            .append(matches!(redir.mode, RedirectionMode::Append))
+            .open(&redir.file)
+            .map_err(|e| ShellError::RedirectionError(format!("Failed to open '{}': {}", redir.file, e)))?;
+
+        // Redirect stderr to file
+        unsafe {
+            libc::dup2(file.as_raw_fd(), libc::STDERR_FILENO);
+        }
+    }
+
+    Ok(guard)
 }

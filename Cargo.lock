@@ -148,6 +148,7 @@ dependencies = [
  "bytes",
  "clap",
  "clap_derive",
+ "libc",
  "regex",
  "rustyline",
  "shell-words",
